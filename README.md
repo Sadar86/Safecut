@@ -45,4 +45,4 @@ A professional-grade video editing application built with Python, PyQt, and FFmp
 1. Clone the repository:
    ```sh
    git clone https://github.com/sadar86/safecut.git
-   cd safecut-video-editor
+   cd safecut
