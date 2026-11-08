@@ -78,7 +78,10 @@ try {
   // unload handler of a loaded editor runs).
   const recovery = await context.newPage();
   await recovery.goto(`${BASE}/editor`, { waitUntil: "networkidle" });
+  await recovery.waitForSelector("[data-testid=preview-canvas]");
+  await recovery.waitForTimeout(500);
   await recovery.evaluate(() => localStorage.setItem("safecut.dirty", "1"));
+  const planted = await recovery.evaluate(() => localStorage.getItem("safecut.dirty"));
   await recovery.close();
 
   const fresh = await context.newPage();
@@ -90,7 +93,11 @@ try {
     .getByText(/last session closed before it finished saving/i)
     .count()
     .catch(() => 0);
-  record("recovery banner appears after an interrupted session", banner > 0, `dirty=${dirtyFlag}, banner=${banner}`);
+  record(
+    "recovery banner appears after an interrupted session",
+    banner > 0,
+    `planted=${planted}, dirty=${dirtyFlag}, banner=${banner}`,
+  );
   const afterReload = await fresh.locator("[data-testid=timeline-clip]").count();
   record("project reloads with its clips after a refresh", afterReload === duplicated, `${afterReload} clips`);
   await fresh.close();
