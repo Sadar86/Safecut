@@ -1,0 +1,47 @@
+{
+  "name": "safecut",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "setup:ffmpeg": "node scripts/setup-ffmpeg.mjs",
+    "postinstall": "node scripts/setup-ffmpeg.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@ffmpeg/core": "^0.12.10",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.70.0",
+    "next": "16.4.5",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tailwind-merge": "^3.7.0",
+    "zustand": "^5.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@tailwindcss/turbopack": "^4",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^5.1.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.5",
+    "jsdom": "^31.0.0",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "^5.1.0"
+  },
+  "description": "SafeCut - a free, professional browser-based video editor",
+  "license": "MIT"
+}
