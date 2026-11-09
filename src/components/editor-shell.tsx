@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, Keyboard, Plus } from "lucide-react";
+import { Download, Keyboard, MessageSquarePlus, Plus } from "lucide-react";
 import { ExportDialog } from "@/components/export-dialog";
 import { Button, Modal } from "@/components/ui";
 import { Preview } from "@/components/preview";
@@ -11,6 +11,7 @@ import { Timeline } from "@/components/timeline";
 import { TopBar } from "@/components/top-bar";
 import { flushSave, startAutosave, useEditor } from "@/stores/editor";
 import { SHORTCUTS, useEditorShortcuts } from "@/lib/shortcuts";
+import { FeedbackDialog } from "@/components/feedback";
 import { FFMPEG_CORE, ffmpegCoreConfig } from "@/lib/ffmpeg";
 import * as reframeMath from "@/lib/ai/reframe";
 
@@ -20,6 +21,7 @@ export function EditorShell() {
   const project = useEditor((s) => s.project);
   const [exportOpen, setExportOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   useEditorShortcuts();
 
   useEffect(() => {
@@ -123,6 +125,9 @@ export function EditorShell() {
         <Button size="sm" variant="ghost" onClick={() => setHelpOpen(true)}>
           <Keyboard size={13} /> <span className="hidden sm:inline">Shortcuts</span>
         </Button>
+        <Button size="sm" variant="ghost" onClick={() => setFeedbackOpen(true)} title="Send beta feedback">
+          <MessageSquarePlus size={13} /> <span className="hidden sm:inline">Feedback</span>
+        </Button>
         <Button size="sm" variant="secondary" onClick={() => useEditor.getState().setPanel("media")}>
           <Plus size={13} /> <span className="hidden sm:inline">Import</span>
         </Button>
@@ -131,6 +136,7 @@ export function EditorShell() {
         </Button>
       </footer>
       <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
       <Modal open={helpOpen} onClose={() => setHelpOpen(false)} title="Keyboard shortcuts">
         <ul className="grid grid-cols-2 gap-2 text-xs">
           {SHORTCUTS.map((s) => (

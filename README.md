@@ -1,6 +1,8 @@
-# SafeCut
+# SafeCut — Beta 1
 
 **A free, professional video editor that runs in your browser.**
+Status: **Beta 1** — features are frozen while the first users try it. Expect rough
+edges; see [Known limitations](#known-limitations) and [Feedback](#beta-feedback).
 Multitrack timeline, colour, text, captions, audio studio, scene detection and
 watermark-free export — with no subscription, no watermark and no uploads.
 
@@ -15,6 +17,34 @@ any of them.
   [FEATURES.md](./FEATURES.md) for the honest, tested status of each feature.
 
 ---
+
+## Beta 1 at a glance
+
+| | |
+| --- | --- |
+| Status | Beta 1 (feature freeze) |
+| Branch | `feat/safecut-web` |
+| Public preview | _not yet published — see [Deployment](#deployment)_ |
+| Feedback | In-app **Feedback** button in the editor footer → builds a privacy-safe report |
+| Test plan | [docs/BETA_TEST_PLAN.md](./docs/BETA_TEST_PLAN.md) |
+
+## Deployment
+
+The app is a standard Next.js project with one optional API route
+(`/api/llm`). It deploys to any Node-capable host; the repository ships a
+`vercel.json` with build settings, long-lived caching for `/ffmpeg/*` and
+`/models/*`, and baseline security headers.
+
+```bash
+npm ci                 # postinstall prepares public/ffmpeg and public/models
+npm run build
+npm run start          # or deploy the repo to Vercel as a *preview* deployment
+```
+
+Environment variables (all optional — without them the AI Studio runs fully
+offline): `OPENAI_API_KEY` **or** `LLM_API_KEY`, `COMPATIBLE_BASE_URL`,
+`LLM_MODEL`, `LLM_RATE_PER_MINUTE` (default 4/IP/min), `LLM_DAILY_LIMIT`
+(default 200/day; `0` disables the endpoint).
 
 ## Quick start
 
@@ -189,7 +219,19 @@ See [FEATURES.md](./FEATURES.md) for the verification evidence per feature and
 
 ---
 
-## Browser support
+## Browser compatibility (Beta 1)
+
+| Browser | Editor | Export | Notes |
+| --- | --- | --- | --- |
+| Chrome 156 / Edge 157 (tested) | ✅ | WebM, MP4 (FFmpeg.wasm) | Reference browser; all suites run here |
+| Other Chromium (recent) | expected ✅ | same | not individually tested |
+| Firefox (recent) | expected ✅ | WebM; MP4 via FFmpeg.wasm | no Web Speech captions; not tested in Beta 1 |
+| Safari 17+ | untested | WebM support varies | FFmpeg.wasm path recommended; not tested |
+
+Not supported in Beta 1: iOS/iPadOS Safari, browsers without WebAssembly
+(no export), and devices with < 4 GB RAM for the on-device AI models.
+
+## Known limitations
 
 | Browser | Editing | Export |
 | --- | --- | --- |
@@ -198,6 +240,36 @@ See [FEATURES.md](./FEATURES.md) for the verification evidence per feature and
 | Safari 17+ | mostly | WebM via MediaRecorder depends on OS support; FFmpeg.wasm path preferred |
 
 ---
+
+## AI model download requirements
+
+| Feature | Model | First-run download |
+| --- | --- | --- |
+| Whisper captions | `whisper-tiny.en` | ≈ 69 MB (cached afterwards) |
+| Multilingual captions | `whisper-base` / `whisper-small` | ≈ 80 MB / 250 MB |
+| Background removal | MODNet | ≈ 25 MB |
+| Face detection (reframe) | MediaPipe BlazeFace | 220 KB + 14 MB runtime (served locally) |
+
+Measured timings, memory and limitations: [docs/AI_MODELS.md](./docs/AI_MODELS.md).
+
+## Beta feedback
+
+In the editor footer press **Feedback**: SafeCut fills in your browser, OS, CPU
+cores, WebGPU support, project duration/resolution and recent export events, you
+answer a few optional questions, and you copy the report into a GitHub issue on
+[Sadar86/Safecut](https://github.com/Sadar86/Safecut/issues). No media, file
+names or personal data are included. The manual test plan lives in
+[docs/BETA_TEST_PLAN.md](./docs/BETA_TEST_PLAN.md).
+
+## Privacy
+
+- Media you import stays in your browser (IndexedDB); SafeCut never uploads it.
+- On-device models (Whisper, MODNet, BlazeFace) run locally; only the model
+  files are downloaded, from the Hugging Face CDN.
+- The browser speech-recognition engine may be cloud-processed by Chrome/Edge —
+  the AI panel warns when it is selected.
+- The optional server assistant is off unless an operator configures a key, and
+  the key never reaches the browser. It is rate-limited and capped daily.
 
 ## Environment variables (all optional)
 

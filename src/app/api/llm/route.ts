@@ -12,6 +12,42 @@ export const runtime = "nodejs";
 
 const MODEL = process.env.LLM_MODEL ?? "gpt-4o-mini";
 
+/**
+ * Abuse protection for a public preview:
+ *  - a per-IP sliding window (in-memory; per instance),
+ *  - a global daily budget so a public URL cannot be used as a free LLM proxy,
+ *  - a hard cap on prompt size.
+ * Set LLM_DAILY_LIMIT=0 to disable the endpoint entirely.
+ */
+const WINDOW_MS = 60_000;
+const PER_IP_PER_MINUTE = Number(process.env.LLM_RATE_PER_MINUTE ?? 4);
+const DAILY_LIMIT = Number(process.env.LLM_DAILY_LIMIT ?? 200);
+const MAX_PROMPT_CHARS = 4000;
+
+const hits = new Map<string, number[]>();
+let dayKey = new Date().toISOString().slice(0, 10);
+let dayCount = 0;
+
+function rateLimited(ip: string): { limited: boolean; retryAfter?: number } {
+  const now = Date.now();
+  const key = new Date().toISOString().slice(0, 10);
+  if (key !== dayKey) {
+    dayKey = key;
+    dayCount = 0;
+  }
+  if (DAILY_LIMIT <= 0) return { limited: true, retryAfter: 3600 };
+  if (dayCount >= DAILY_LIMIT) return { limited: true, retryAfter: 3600 };
+  const recent = (hits.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
+  if (recent.length >= PER_IP_PER_MINUTE) {
+    return { limited: true, retryAfter: Math.ceil((WINDOW_MS - (now - recent[0])) / 1000) };
+  }
+  recent.push(now);
+  hits.set(ip, recent);
+  if (hits.size > 5000) hits.clear();
+  dayCount += 1;
+  return { limited: false };
+}
+
 export async function GET() {
   return NextResponse.json({
     configured: Boolean(process.env.OPENAI_API_KEY ?? process.env.LLM_API_KEY),
@@ -32,8 +68,23 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "bad-request" }, { status: 400 });
   }
-  const prompt = (body?.prompt ?? "").slice(0, 6000);
+  const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
   if (!prompt) return NextResponse.json({ error: "empty-prompt" }, { status: 400 });
+  if (prompt.length > MAX_PROMPT_CHARS) {
+    return NextResponse.json({ error: "prompt-too-long", max: MAX_PROMPT_CHARS }, { status: 413 });
+  }
+
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "anonymous";
+  const limit = rateLimited(ip);
+  if (limit.limited) {
+    return NextResponse.json(
+      { error: "rate-limited", retryAfter: limit.retryAfter },
+      { status: 429, headers: { "retry-after": String(limit.retryAfter ?? 60) } },
+    );
+  }
 
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {

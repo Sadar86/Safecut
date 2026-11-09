@@ -8,6 +8,7 @@ import { cn, downloadBlob } from "@/lib/utils";
 import { renderProject } from "@/lib/exporter";
 import type { ExportSettings } from "@/lib/exporter";
 import { isFFmpegLoaded, loadFFmpeg, transcodeVideo } from "@/lib/ffmpeg";
+import { recordBetaEvent } from "@/components/feedback";
 
 const RESOLUTIONS = [
   { label: "480p", height: 480 },
@@ -83,6 +84,11 @@ export function ExportDialog({ open, onClose }: { open: boolean; onClose: () => 
       const url = URL.createObjectURL(blob);
       const safe = project.name.replace(/[^a-z0-9-_ ]/gi, "").replace(/\s+/g, "-") || "safecut";
       setResult({ blob, url, name: `${safe}-${height}p.${format}`, mime });
+      recordBetaEvent({
+        kind: "export",
+        ok: true,
+        detail: `${format.toUpperCase()} ${width}×${height} ${fps}fps · ${engine} · ${(blob.size / 1048576).toFixed(1)} MB`,
+      });
       toast("Export finished — no watermark, no limits", "success");
     } catch (err) {
       if ((err as Error).name === "AbortError") {
@@ -97,6 +103,7 @@ export function ExportDialog({ open, onClose }: { open: boolean; onClose: () => 
           toast((retryErr as Error).message || "Export failed", "error");
         }
       } else {
+        recordBetaEvent({ kind: "error", ok: false, detail: `export: ${(err as Error).message}` });
         toast((err as Error).message || "Export failed", "error");
       }
     } finally {

@@ -20,7 +20,9 @@ export function kindFromMime(mime: string, name: string): MediaAsset["kind"] {
 
 const ALLOWED_MIME = /^(video|audio|image)\//;
 const ALLOWED_EXT = /\.(mp4|mov|webm|mkv|m4v|avi|mp3|wav|aac|m4a|ogg|flac|png|jpe?g|webp|gif|avif)$/i;
-const MAX_BYTES = 4 * 1024 * 1024 * 1024; // 4 GB per file
+// Beta limit: 2 GB per file. The browser keeps everything in memory while
+// decoding, so larger files are refused instead of crashing the tab.
+const MAX_BYTES = 2 * 1024 * 1024 * 1024;
 
 export interface ValidationResult {
   ok: boolean;
@@ -32,7 +34,7 @@ export function validateMediaFile(file: File): ValidationResult {
   const mimeOk = file.type ? ALLOWED_MIME.test(file.type) : ALLOWED_EXT.test(file.name);
   if (!mimeOk) return { ok: false, error: `${file.name}: unsupported file type` };
   if (file.size === 0) return { ok: false, error: `${file.name}: file is empty` };
-  if (file.size > MAX_BYTES) return { ok: false, error: `${file.name}: larger than 4 GB` };
+  if (file.size > MAX_BYTES) return { ok: false, error: `${file.name}: larger than 2 GB (beta limit)` };
   return { ok: true };
 }
 
