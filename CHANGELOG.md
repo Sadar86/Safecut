@@ -4,6 +4,52 @@ All notable changes to SafeCut are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] — Phase 3: AI Creator Studio
+
+### Added
+
+- **AI Studio** panel in the editor with eight tabs: Captions, Silence, Voice,
+  Background, Reframe, Highlights, Voice-over, Assistant.
+- **On-device speech recognition** with transformers.js Whisper (tiny.en,
+  multilingual base/small) plus the browser Web Speech engine as a fallback;
+  word-level alignment maths with merge/split/retime.
+- **Smart silence removal**: threshold and minimum-duration controls, per-segment
+  approval, gap closing, sync preserved.
+- **Background removal** with MODNet: transparent, solid colour, image and blur
+  backgrounds, preview matte, applied non-destructively in the renderer and the
+  exporter.
+- **Smart reframe** with MediaPipe BlazeFace face focus, manual pan and crop
+  maths for 9:16, 1:1, 4:5, 16:9 and 21:9.
+- **Text-to-speech** that renders a local synthetic voice into a WAV asset placed
+  on its own audio track.
+- **Voice enhancement**: presets, intensity, level/SNR analysis, live preview
+  chain and offline WAV rendering, all non-destructive.
+- **Highlight detection** from motion + loudness, with an explicit "add reel"
+  action that never deletes source clips.
+- **Creator assistant** (titles, description, captions, aspect ratio,
+  improvements, script → plan) with an optional server LLM proxy whose key never
+  reaches the browser.
+- `docs/AI_MODELS.md`: measured model sizes, load/inference times, memory,
+  limitations and privacy.
+- `npm run setup:models`, `npm run smoke:ai`, `npm run validate:models`.
+
+### Fixed
+
+- Chrome 156/157 removed the Shape Detection `FaceDetector` API; face detection
+  now uses MediaPipe BlazeFace (220 KB model, CPU delegate 10× faster than GPU).
+- MODNet masks were empty with the quantised export — pinned to `fp32` and
+  `RawImage.fromCanvas` (the constructor loses the channel count).
+- Whisper word timestamps throw without cross-attentions — now falls back to
+  chunk timestamps and reports phrase-level timing honestly.
+- Reframe focus label could lag behind the detection result; the panel now
+  commits result state together and shows a measured "face pass" timing.
+
+### Tests
+
+- 131 unit tests (was 75).
+- 30-check AI browser smoke suite, 17-check Phase 1–2 suite, 18-check real-model
+  validation (Whisper, MODNet, BlazeFace, reframe maths, failure recovery).
+
 ## [0.2.0] — Phase 2: captions, audio studio, scene detection, FFmpeg export
 
 ### Added

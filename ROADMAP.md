@@ -32,7 +32,25 @@ behind each item.
 - [x] Frame stepping, stronger snapping, 10 s auto-save, crash recovery
 - [x] 75 unit tests + 17-check browser smoke suite
 
-## Phase 3 — Professional editing (next)
+## Phase 3 — AI Creator Studio ✅ (done, with documented gaps)
+
+- [x] Word-level caption alignment maths, merge/split/retime, SRT/VTT/TXT
+- [x] Whisper tiny.en on-device transcription (measured 68.6 MB, 4.3 s per 4 s)
+- [x] Browser speech recognition fallback with engine picker and languages
+- [x] Smart silence removal: detect → review → approve → remove → close gaps
+- [x] MODNet background removal with transparent/colour/image/blur backgrounds
+- [x] Smart reframe (9:16, 1:1, 4:5, 16:9, 21:9) with MediaPipe face focus
+- [x] Local text-to-speech producing WAV assets on their own track
+- [x] Non-destructive voice enhancement (presets, intensity, analysis, render)
+- [x] Highlight detection and highlight reel (source never deleted)
+- [x] Creator assistant (offline planner + optional server LLM proxy)
+- [x] Model/device documentation with measured numbers (docs/AI_MODELS.md)
+- [ ] True word-level timestamps (needs an ONNX export with output_attentions)
+- [ ] Per-frame video matting (WebGPU + batched inference)
+- [ ] Multilingual Whisper validation (base/small)
+- [ ] Natural TTS voices (optional, user-supplied)
+
+## Phase 3b — Professional editing (next)
 
 - [ ] Chroma key (green screen) and background removal
 - [ ] Custom LUT import and colour wheels
