@@ -90,6 +90,7 @@ export function AiCaptionsPanel() {
   const [template, setTemplate] = useState("clean");
   const [progress, setProgress] = useState<TranscriptionProgress | null>(null);
   const [wordLevel, setWordLevel] = useState<boolean | null>(null);
+  const [lastRun, setLastRun] = useState<{ words: number; ms: number; engine: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const clip = project.clips.find((c) => c.id === selected[0]);
@@ -104,6 +105,7 @@ export function AiCaptionsPanel() {
     abortRef.current = controller;
     setProgress({ stage: "loading", ratio: 0, message: "Starting…" });
     try {
+      const started = performance.now();
       const result = await transcribe({
         assetId: asset.id,
         assetUrl: asset.url,
@@ -117,6 +119,10 @@ export function AiCaptionsPanel() {
       if (cues.length === 0) return toast("No speech detected", "error");
       useEditor.setState({ project: { ...useEditor.getState().project, captions: cues, captionSourceId: asset.id } });
       setWordLevel(result.wordLevel);
+      setLastRun({ words: result.words.length, ms: Math.round(performance.now() - started), engine: result.engine });
+      useEditor.setState({
+        project: { ...useEditor.getState().project, aiLastTranscript: result.words as never },
+      });
       toast(
         `${cues.length} cues from ${result.engine}${result.wordLevel ? " (word-level)" : " (phrase timing)"}`,
         "success",
@@ -154,6 +160,7 @@ export function AiCaptionsPanel() {
               key={e.id}
               onClick={() => setEngine(e.id)}
               disabled={!e.available}
+              data-testid={`engine-${e.id}`}
               className={cn(
                 "w-full rounded border px-2 py-1.5 text-left text-[11px]",
                 engine === e.id ? "border-brand bg-brand/10" : "border-border-subtle",
@@ -195,18 +202,29 @@ export function AiCaptionsPanel() {
           {busy ? "Working…" : "Generate captions"}
         </Button>
         {busy && (
-          <Button size="sm" variant="ghost" onClick={() => abortRef.current?.abort()} aria-label="Stop">
-            <Square size={12} />
+          <Button size="sm" variant="danger" onClick={() => abortRef.current?.abort()} aria-label="Cancel transcription">
+            <Square size={12} /> Stop
           </Button>
         )}
       </div>
 
+      {lastRun && (
+        <p className="text-[10px] text-muted" data-testid="transcript-summary">
+          {lastRun.words} words · {lastRun.ms} ms · {lastRun.engine}
+        </p>
+      )}
       {progress && (
         <div className="space-y-1">
           <div className="h-1 overflow-hidden rounded bg-surface-3">
             <div className="h-full bg-brand transition-all" style={{ width: `${Math.max(4, progress.ratio * 100)}%` }} />
           </div>
-          <p className="text-[10px] text-muted">{progress.message}</p>
+          <p className="text-[10px] text-muted" data-testid="transcription-progress">
+            {progress.message} {progress.ratio > 0 ? `(${Math.round(progress.ratio * 100)}%)` : ""}
+          </p>
+          <p className="text-[9px] leading-relaxed text-muted">
+            Runs on this device. The first run downloads the model (Whisper tiny.en ≈ 69 MB) and can take a
+            minute or more on CPU; later runs use the browser cache. Cancel any time.
+          </p>
         </div>
       )}
 
@@ -499,6 +517,7 @@ export function BackgroundPanel() {
   const [matteUrl, setMatteUrl] = useState<string | undefined>();
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [lastRun, setLastRun] = useState<{ ms: number; coverage: number; size: string } | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const clip = project.clips.find((c) => c.id === selected[0]);
@@ -526,7 +545,9 @@ export function BackgroundPanel() {
               await new Promise((r) => (video.onseeked = r));
               return video;
             })();
+      const started = performance.now();
       const matte = await computeMatte(el, { onStatus: setStatus });
+      const elapsed = Math.round(performance.now() - started);
       const canvas = document.createElement("canvas");
       canvas.width = matte.width;
       canvas.height = matte.height;
@@ -543,6 +564,13 @@ export function BackgroundPanel() {
       if (!blob) throw new Error("Could not encode the matte");
       await putAuxBlob(`matte:${clip.id}`, blob);
       setMatteUrl(URL.createObjectURL(blob));
+      let opaque = 0;
+      for (let i = 0; i < matte.alpha.length; i++) if (matte.alpha[i] > 128) opaque++;
+      setLastRun({
+        ms: elapsed,
+        coverage: Math.round((opaque / matte.alpha.length) * 100),
+        size: `${matte.width}×${matte.height}`,
+      });
       setStatus("Matte ready — preview it in the canvas");
       toast("Subject isolated. Apply to composite it.", "success");
     } catch (err) {
@@ -584,7 +612,9 @@ export function BackgroundPanel() {
       <DeviceBadge caps={caps} />
       <p className="text-[11px] leading-relaxed text-muted">
         Portrait segmentation (MODNet, ~{MODELS["selfie-segmentation"].sizeMb} MB) runs on this device.
-        The matte is captured for one frame of the selected clip and composited live — your file is never modified.
+        Measured on a mid-range laptop: ~12–29 s to load the model and ~2 s per frame — this is{" "}
+        <strong>offline processing of a still frame</strong>, not real-time video matting. The matte is
+        captured for one frame of the selected clip and composited live; your file is never modified.
       </p>
       {caps && caps.tier === "low" && (
         <p className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-300">
@@ -595,7 +625,16 @@ export function BackgroundPanel() {
         {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
         {busy ? "Working…" : "Detect subject"}
       </Button>
-      {status && <p className="text-[10px] text-brand">{status}</p>}
+      {status && (
+        <p className="text-[10px] text-brand" data-testid="matte-status">
+          {status}
+        </p>
+      )}
+      {lastRun && (
+        <p className="text-[10px] text-muted" data-testid="matte-summary">
+          Matte {lastRun.size} · subject {lastRun.coverage}% of frame · {lastRun.ms} ms
+        </p>
+      )}
 
       {matteUrl && (
         <>
@@ -673,6 +712,8 @@ export function ReframePanel() {
   const [manualX, setManualX] = useState(50);
   const [manualY, setManualY] = useState(50);
   const [busy, setBusy] = useState(false);
+  const [faceSource, setFaceSource] = useState<"face" | "manual" | null>(null);
+  const [faceTiming, setFaceTiming] = useState<{ ms: number; video: string } | null>(null);
 
   const clip = project.clips.find((c) => c.id === selected[0]);
   const asset = project.assets.find((a) => a.id === clip?.mediaId);
@@ -686,6 +727,9 @@ export function ReframePanel() {
   const detect = async () => {
     if (!asset?.url) return toast("Select a video clip first", "error");
     setBusy(true);
+    // Clear the previous result so the UI (and tests) can see this run finish.
+    setSubject(null);
+    setFaceSource(null);
     try {
       const video = document.createElement("video");
       video.src = asset.url;
@@ -693,11 +737,21 @@ export function ReframePanel() {
       await new Promise((r) => (video.onloadeddata = r));
       video.currentTime = clip?.inPoint ?? 0;
       await new Promise((r) => (video.onseeked = r));
+      const startedAt = performance.now();
       const face = await detectFace(video);
+      setFaceTiming({
+        ms: Math.round(performance.now() - startedAt),
+        video: `${video.videoWidth}×${video.videoHeight}`,
+      });
       if (face) {
         setSubject(face);
+        setFaceSource("face");
+        setManualX(Math.round((face.x + face.w / 2) * 100));
+        setManualY(Math.round((face.y + face.h / 2) * 100));
         toast("Face detected — the crop will follow it", "success");
       } else {
+        setFaceSource("manual");
+        setSubject(null);
         toast(
           faceDetectionSupported()
             ? "No face found in this frame; using manual focus"
@@ -758,7 +812,11 @@ export function ReframePanel() {
       </Button>
       <Slider label="Focus X" value={manualX} min={0} max={100} format={(v) => `${v}%`} onChange={(v) => { setSubject(null); setManualX(v); }} />
       <Slider label="Focus Y" value={manualY} min={0} max={100} format={(v) => `${v}%`} onChange={(v) => { setSubject(null); setManualY(v); }} />
-      <div className="rounded border border-border-subtle bg-surface p-2 text-[10px]">
+      <div className="rounded border border-border-subtle bg-surface p-2 text-[10px]" data-testid="reframe-summary">
+        <div className="flex justify-between"><span>Focus</span><span className="font-mono" data-testid="reframe-focus">{faceSource ?? (subject ? "face" : "manual")}</span></div>
+        {faceTiming && (
+          <div className="flex justify-between"><span>Face pass</span><span className="font-mono">{faceTiming.ms} ms · {faceTiming.video}</span></div>
+        )}
         <div className="flex justify-between"><span>Source</span><span className="font-mono">{source.width}×{source.height}</span></div>
         <div className="flex justify-between"><span>Crop</span><span className="font-mono">{crop.w}×{crop.h} at {crop.x},{crop.y}</span></div>
         <div className="flex justify-between"><span>Scale</span><span className="font-mono">{transform.scale.toFixed(2)}×</span></div>

@@ -142,7 +142,11 @@ export function markDirty(dirty: boolean) {
 /* -------------------------------- projects -------------------------------- */
 
 export async function saveProject(project: Project): Promise<void> {
-  const stored: Project = { ...project, assets: project.assets.map((a) => ({ ...a, url: undefined })) };
+  const stored: Project = {
+    ...project,
+    assets: project.assets.map((a) => ({ ...a, url: undefined })),
+    aiLastTranscript: undefined,
+  };
   const ok = await tx(PROJECTS, "readwrite", (s) => s.put(stored));
   if (ok === null) {
     try {

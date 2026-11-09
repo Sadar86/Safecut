@@ -233,6 +233,8 @@ export interface Project {
   captions?: SubtitleCue[];
   /** Which asset the captions belong to. */
   captionSourceId?: string | null;
+  /** Runtime-only: word timings from the last AI transcription (not saved). */
+  aiLastTranscript?: unknown;
 }
 
 export interface SubtitleCue {

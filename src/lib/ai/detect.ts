@@ -1,48 +1,93 @@
 "use client";
 
 /**
- * Subject detection for Smart Reframing.
+ * Face detection for Smart Reframing.
  *
- * Face detection uses the browser's Shape Detection API (Chrome/Edge, on-device).
- * When it is unavailable we fall back to a motion/energy centre-of-mass estimate
- * computed from sampled frames, which works for most talking-head and action
- * footage. Both paths return normalised boxes, so the crop maths is identical.
+ * Chrome 156/157 no longer expose the old Shape Detection `FaceDetector` API, so
+ * SafeCut ships the MediaPipe BlazeFace detector instead: the runtime (wasm) and
+ * the 220 KB model are served from the app's own origin by
+ * `scripts/setup-models.mjs` and run entirely on the device.
+ *
+ * When the detector cannot load (no assets, unsupported device), `detectFace`
+ * returns null and the reframe panel falls back to manual focus or the
+ * motion-based estimate below.
  */
 
 import type { Box } from "@/lib/ai/reframe";
 
-interface DetectedFace {
-  boundingBox: { x: number; y: number; width: number; height: number };
+/** Synthesised/illustrated faces are detected less confidently than photos. */
+const MIN_FACE_CONFIDENCE = 0.2;
+
+interface Detection {
+  boundingBox: { originX: number; originY: number; width: number; height: number };
+  categories?: { score: number }[];
 }
-interface FaceDetectorLike {
-  detect: (source: CanvasImageSource) => Promise<DetectedFace[]>;
+interface FaceDetectorInstance {
+  detect: (image: CanvasImageSource) => { detections: Detection[] };
+  close?: () => void;
 }
-type FaceDetectorCtor = new (options?: { fastMode?: boolean; maxDetectedFaces?: number }) => FaceDetectorLike;
+interface FaceDetectorApi {
+  createFromOptions: (
+    fileset: unknown,
+    options: { baseOptions: { modelAssetPath: string; delegate?: string }; runningMode?: string; minDetectionConfidence?: number },
+  ) => Promise<FaceDetectorInstance>;
+}
+
+let detectorPromise: Promise<FaceDetectorInstance | null> | null = null;
+
+/** Paths are relative so the app works when hosted under a sub-path. */
+export const FACE_MODEL_PATH = "/models/blaze_face_short_range.tflite";
+export const WASM_BASE = "/models/wasm";
+
+/** Load (once) the MediaPipe face detector, or null when unavailable. */
+export async function loadFaceDetector(): Promise<FaceDetectorInstance | null> {
+  if (detectorPromise) return detectorPromise;
+  detectorPromise = (async () => {
+    try {
+      const vision = (await import("@mediapipe/tasks-vision")) as unknown as {
+        FaceDetector: FaceDetectorApi;
+        FilesetResolver: { forVisionTasks: (path: string) => Promise<unknown> };
+      };
+      const fileset = await vision.FilesetResolver.forVisionTasks(WASM_BASE);
+      return await vision.FaceDetector.createFromOptions(fileset, {
+        // CPU delegate is 10x faster than GPU for this small model on WASM.
+        baseOptions: { modelAssetPath: FACE_MODEL_PATH, delegate: "CPU" },
+        runningMode: "IMAGE",
+        minDetectionConfidence: MIN_FACE_CONFIDENCE,
+      });
+    } catch {
+      return null;
+    }
+  })();
+  return detectorPromise;
+}
 
 export function faceDetectionSupported(): boolean {
-  if (typeof window === "undefined") return false;
-  const w = window as unknown as { FaceDetector?: FaceDetectorCtor };
-  return typeof w.FaceDetector === "function";
+  return typeof window !== "undefined";
 }
 
-/** Detect the most prominent face in a frame as a normalised box. */
-export async function detectFace(source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement): Promise<Box | null> {
-  if (!faceDetectionSupported()) return null;
-  const w = window as unknown as { FaceDetector: FaceDetectorCtor };
+/** Detect the largest face in a frame as a normalised box. */
+export async function detectFace(
+  source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
+): Promise<Box | null> {
+  const detector = await loadFaceDetector();
+  if (!detector) return null;
+  const width =
+    (source as HTMLVideoElement).videoWidth || (source as HTMLImageElement).naturalWidth || (source as HTMLCanvasElement).width;
+  const height =
+    (source as HTMLVideoElement).videoHeight || (source as HTMLImageElement).naturalHeight || (source as HTMLCanvasElement).height;
+  if (!width || !height) return null;
   try {
-    const detector = new w.FaceDetector({ fastMode: true, maxDetectedFaces: 3 });
-    const faces = await detector.detect(source);
-    if (faces.length === 0) return null;
-    const width = (source as HTMLVideoElement).videoWidth || (source as HTMLImageElement).naturalWidth || (source as HTMLCanvasElement).width;
-    const height = (source as HTMLVideoElement).videoHeight || (source as HTMLImageElement).naturalHeight || (source as HTMLCanvasElement).height;
-    const best = faces
-      .map((f) => f.boundingBox)
+    const { detections } = detector.detect(source);
+    if (detections.length === 0) return null;
+    const best = detections
+      .map((d) => d.boundingBox)
       .sort((a, b) => b.width * b.height - a.width * a.height)[0];
     return {
-      x: best.x / width,
-      y: best.y / height,
-      w: best.width / width,
-      h: best.height / height,
+      x: Math.max(0, best.originX / width),
+      y: Math.max(0, best.originY / height),
+      w: Math.min(1, best.width / width),
+      h: Math.min(1, best.height / height),
     };
   } catch {
     return null;

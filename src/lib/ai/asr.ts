@@ -46,6 +46,14 @@ export interface WhisperOptions {
   device?: "wasm" | "webgpu";
   onProgress?: ModelProgress;
   onStatus?: (message: string) => void;
+  signal?: AbortSignal;
+}
+
+/** Progress of a transcription run, surfaced in the UI. */
+export interface TranscribeStage {
+  stage: "download" | "load" | "decode" | "transcribe";
+  ratio: number;
+  message: string;
 }
 
 export async function loadWhisper(options: WhisperOptions): Promise<Pipeline> {
@@ -100,19 +108,43 @@ export interface TranscriptionResult {
  */
 export async function transcribeLocal(
   audio16k: Float32Array,
-  options: WhisperOptions & { offset?: number },
+  options: WhisperOptions & { offset?: number; onStage?: (stage: TranscribeStage) => void },
 ): Promise<TranscriptionResult> {
-  const pipeline = await loadWhisper(options);
+  const stage = (s: TranscribeStage) => options.onStage?.(s);
+  stage({ stage: "load", ratio: 0, message: "Loading speech model…" });
+  const pipeline = await loadWhisper({
+    ...options,
+    onProgress: (p) => {
+      options.onProgress?.(p);
+      stage({ stage: "download", ratio: p.ratio, message: `Downloading model ${Math.round(p.ratio * 100)}%` });
+    },
+    onStatus: (m) => {
+      options.onStatus?.(m);
+      stage({ stage: "load", ratio: 0, message: m });
+    },
+  });
+  if (options.signal?.aborted) throw new DOMException("Cancelled", "AbortError");
   options.onStatus?.("Transcribing…");
+  stage({ stage: "transcribe", ratio: 0, message: "Transcribing (runs on this device)…" });
   const offset = options.offset ?? 0;
 
-  const result = await pipeline(audio16k, {
-    return_timestamps: "word",
+  // The quantised ONNX export has no cross-attention outputs, so *word*
+  // timestamps throw. Request chunk timestamps first (supported everywhere),
+  // then split each chunk into words proportionally.
+  const base = {
     chunk_length_s: 30,
     stride_length_s: 5,
     language: options.language && options.language !== "auto" ? options.language : undefined,
     task: "transcribe",
-  });
+  };
+  let result: Awaited<ReturnType<Pipeline>>;
+  let wordTimestamps = false;
+  try {
+    result = await pipeline(audio16k, { ...base, return_timestamps: "word" });
+    wordTimestamps = true;
+  } catch {
+    result = await pipeline(audio16k, { ...base, return_timestamps: true });
+  }
 
   const words: WordTiming[] = [];
   if (result.chunks?.length) {
@@ -158,7 +190,9 @@ export async function transcribeLocal(
   return {
     text: result.text?.trim() ?? expanded.map((w) => w.word).join(" "),
     words: expanded,
-    wordLevel: expanded.length > 1,
+    // `wordLevel` is true only when the model itself reported word timings;
+    // chunk timings are split proportionally and reported as phrase-level.
+    wordLevel: wordTimestamps && expanded.length > 1,
   };
 }
 

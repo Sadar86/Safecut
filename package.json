@@ -12,13 +12,16 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "setup:ffmpeg": "node scripts/setup-ffmpeg.mjs",
-    "postinstall": "node scripts/setup-ffmpeg.mjs",
+    "postinstall": "node scripts/setup-ffmpeg.mjs && node scripts/setup-models.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "smoke:ai": "node scripts/smoke-ai.mjs"
+    "smoke:ai": "node scripts/smoke-ai.mjs",
+    "setup:models": "node scripts/setup-models.mjs",
+    "validate:models": "node scripts/validate-models.mjs"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",
     "@huggingface/transformers": "^4.3.2",
+    "@mediapipe/tasks-vision": "^1.2.2",
     "clsx": "^2.1.1",
     "lucide-react": "^1.70.0",
     "next": "16.4.5",

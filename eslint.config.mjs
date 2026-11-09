@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Vendored FFmpeg.wasm bundles copied by scripts/setup-ffmpeg.mjs
     "public/ffmpeg/**",
+    // MediaPipe runtime + face model copied by scripts/setup-models.mjs
+    "public/models/**",
   ]),
 ]);
 

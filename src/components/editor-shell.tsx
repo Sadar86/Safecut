@@ -12,6 +12,7 @@ import { TopBar } from "@/components/top-bar";
 import { flushSave, startAutosave, useEditor } from "@/stores/editor";
 import { SHORTCUTS, useEditorShortcuts } from "@/lib/shortcuts";
 import { FFMPEG_CORE, ffmpegCoreConfig } from "@/lib/ffmpeg";
+import * as reframeMath from "@/lib/ai/reframe";
 
 export function EditorShell() {
   const ready = useEditor((s) => s.ready);
@@ -30,9 +31,21 @@ export function EditorShell() {
     const w = window as unknown as {
       __safecutStore?: typeof useEditor;
       __safecutFFmpegCore?: () => Promise<{ coreURL: string; wasmURL: string; workerURL: string }>;
+      __safecutLoadTransformers?: () => Promise<unknown>;
+      __safecutFace?: () => Promise<typeof import("@/lib/ai/detect")>;
+      __safecutVision?: () => Promise<unknown>;
+      __safecutMedia?: () => Promise<typeof import("@/lib/media")>;
+      __safecutReframe?: typeof reframeMath;
+      __smokeClipId?: string;
     };
     w.__safecutStore = useEditor;
     w.__safecutFFmpegCore = ffmpegCoreConfig;
+    // Loaded on demand by scripts/validate-models.mjs.
+    w.__safecutLoadTransformers = () => import("@huggingface/transformers");
+    w.__safecutFace = () => import("@/lib/ai/detect");
+    w.__safecutVision = () => import("@mediapipe/tasks-vision");
+    w.__safecutMedia = () => import("@/lib/media");
+    w.__safecutReframe = reframeMath;
     void FFMPEG_CORE;
   }, []);
 

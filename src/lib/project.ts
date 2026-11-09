@@ -51,7 +51,11 @@ export function toProjectFile(project: Project): ProjectFile {
     format: "safecut-project",
     version: PROJECT_VERSION,
     exportedAt: Date.now(),
-    project: { ...project, assets: project.assets.map((a) => ({ ...a, url: undefined })) },
+    project: {
+      ...project,
+      assets: project.assets.map((a) => ({ ...a, url: undefined })),
+      aiLastTranscript: undefined,
+    },
   };
 }
 

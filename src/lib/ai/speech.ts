@@ -113,6 +113,13 @@ export async function transcribe(request: TranscriptionRequest): Promise<Transcr
       language: request.language,
       device: "wasm",
       offset,
+      signal,
+      onStage: (st) =>
+        onProgress?.({
+          stage: st.stage === "download" || st.stage === "load" ? "loading" : "transcribing",
+          ratio: st.ratio,
+          message: st.message,
+        }),
       onProgress: (p) =>
         onProgress?.({ stage: "loading", ratio: p.ratio, message: `Downloading model ${Math.round(p.ratio * 100)}%` }),
       onStatus: (message) => onProgress?.({ stage: "transcribing", ratio: 0, message }),

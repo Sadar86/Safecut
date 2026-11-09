@@ -17,9 +17,12 @@ type Segmenter = (input: unknown, options?: Record<string, unknown>) => Promise<
   [index: number]: { data: Uint8Array | Float32Array; dims?: number[] };
 }>;
 
+interface RawImageLike {
+  fromCanvas: (canvas: HTMLCanvasElement) => unknown;
+}
 interface TransformersModule {
   pipeline: (task: string, model: string, options?: Record<string, unknown>) => Promise<Segmenter>;
-  RawImage: new (source: unknown) => unknown;
+  RawImage: RawImageLike;
 }
 
 let modulePromise: Promise<TransformersModule> | null = null;
@@ -34,13 +37,14 @@ async function loadTransformers(): Promise<TransformersModule> {
 
 export async function loadSegmenter(
   modelId = "Xenova/modnet",
-  options: { onProgress?: ModelProgress; onStatus?: (m: string) => void } = {},
+  options: { onProgress?: ModelProgress; onStatus?: (m: string) => void; dtype?: "fp32" | "q8" } = {},
 ): Promise<Segmenter> {
   if (segmenterPromise) return segmenterPromise;
   segmenterPromise = (async () => {
     const transformers = await loadTransformers();
     options.onStatus?.("Downloading background model…");
     const segmenter = await transformers.pipeline("image-segmentation", modelId, {
+      dtype: options.dtype ?? "fp32",
       progress_callback: (event: { file?: string; loaded?: number; total?: number }) => {
         if (!options.onProgress || !event.total) return;
         options.onProgress({
@@ -97,10 +101,12 @@ export async function computeMatte(
   source: CanvasImageSource & { videoWidth?: number; videoHeight?: number; naturalWidth?: number; naturalHeight?: number },
   options: { maxSize?: number; onStatus?: (m: string) => void } = {},
 ): Promise<Matte> {
-  const segmenter = await loadSegmenter("Xenova/modnet", { onStatus: options.onStatus });
+  // fp32 is required: the quantised export produces masks with no channel data.
+  const segmenter = await loadSegmenter("Xenova/modnet", { onStatus: options.onStatus, dtype: "fp32" });
   const canvas = sourceToCanvas(source, options.maxSize ?? 384);
   const transformers = await loadTransformers();
-  const image = new transformers.RawImage(canvas);
+  // `new RawImage(canvas)` loses the channel count; the static factory keeps it.
+  const image = transformers.RawImage.fromCanvas(canvas);
   options.onStatus?.("Detecting subject…");
   const output = await segmenter(image);
 
