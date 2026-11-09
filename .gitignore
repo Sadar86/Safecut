@@ -51,6 +51,7 @@ next-env.d.ts
 # The face model is committed so a fresh clone can always detect faces.
 /public/models/*
 !/public/models/blaze_face_short_range.tflite
+!/public/models/test-face.jpg
 
 # TypeScript incremental build info
 *.tsbuildinfo

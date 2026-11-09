@@ -26,6 +26,7 @@ if (existsSync(wasmSrc)) {
 }
 
 const FACE_MODEL =
+  process.env.SAFECUT_FACE_MODEL_URL ??
   "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite";
 const FACE_FIXTURE = "https://storage.googleapis.com/mediapipe-assets/portrait.jpg";
 const fixtureTarget = join(dest, "test-face.jpg");
