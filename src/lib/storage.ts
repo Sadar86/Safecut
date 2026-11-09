@@ -94,6 +94,23 @@ export async function hydrateAssets(project: Project): Promise<Project> {
   return { ...project, assets };
 }
 
+/** Store any extra blob (alpha matte, background image) by key. */
+export async function putAuxBlob(key: string, blob: Blob) {
+  try {
+    await tx(BLOBS, "readwrite", (s) => s.put(blob, key));
+  } catch {
+    /* quota or private mode */
+  }
+}
+
+export async function getAuxBlob(key: string): Promise<Blob | null> {
+  try {
+    return await tx<Blob>(BLOBS, "readonly", (s) => s.get(key));
+  } catch {
+    return null;
+  }
+}
+
 /* ------------------------------- waveforms ------------------------------- */
 
 export async function saveWaveform(assetId: string, data: unknown) {

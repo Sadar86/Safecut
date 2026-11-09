@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Maximize2, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX, ZoomIn, ZoomOut } from "lucide-react";
 import { useEditor } from "@/stores/editor";
-import { useCanvasRenderer } from "@/components/preview-renderer";
+import { applyVoiceChain, useCanvasRenderer } from "@/components/preview-renderer";
 import { Button } from "@/components/ui";
 import { formatTime } from "@/lib/utils";
 import { evaluateKeyframes } from "@/lib/timeline";
@@ -125,6 +125,8 @@ export function Preview() {
         0,
         Math.min(1, volumeKf * fadeInGain * fadeOutGain * (track?.volume ?? 1) * (muted ? 0 : 1)),
       );
+      // Non-destructive voice enhancement (nodes are reused per element).
+      applyVoiceChain(el, clip);
       const target = clip.inPoint + local * clip.speed;
       if (Math.abs(el.currentTime - target) > 0.25) el.currentTime = target;
       if (playing && el.paused) void el.play().catch(() => undefined);

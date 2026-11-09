@@ -5,6 +5,7 @@ import { useCallback } from "react";
 import { evaluateKeyframes } from "@/lib/timeline";
 import { cssFilter, tintOverlay } from "@/lib/effects";
 import { buildHistogram, isBlackFrame, type SceneFrame } from "@/lib/scene-math";
+import { buildVoiceChain, presetById } from "@/lib/ai/voice";
 
 export interface RenderOptions {
   width: number;
@@ -22,6 +23,93 @@ type Pool = Map<string, HTMLVideoElement | HTMLImageElement>;
 
 const videoPool: Pool = new Map();
 const imagePool: Pool = new Map();
+/** Alpha mattes for background removal, keyed by URL. */
+const mattePool = new Map<string, HTMLCanvasElement>();
+const matteImages = new Map<string, HTMLImageElement>();
+
+export function clearMatteCache() {
+  mattePool.clear();
+  matteImages.clear();
+}
+
+/** Turn an alpha-matte image into a canvas (cached) so it can be masked. */
+function getMatte(url: string): HTMLCanvasElement | null {
+  const cached = mattePool.get(url);
+  if (cached) return cached;
+  const img = matteImages.get(url) ?? new Image();
+  if (!matteImages.has(url)) {
+    img.crossOrigin = "anonymous";
+    img.src = url;
+    matteImages.set(url, img);
+  }
+  if (!img.complete || img.naturalWidth === 0) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  canvas.getContext("2d")?.drawImage(img, 0, 0);
+  mattePool.set(url, canvas);
+  return canvas;
+}
+
+/**
+ * Draw a source with a background: the subject is masked by the alpha matte and
+ * composited over the chosen background.
+ */
+function drawWithBackground(
+  ctx: CanvasRenderingContext2D,
+  source: HTMLVideoElement | HTMLImageElement,
+  sourceSize: { w: number; h: number },
+  clip: Project["clips"][number],
+  width: number,
+  height: number,
+) {
+  const bg = clip.background;
+  if (!bg?.enabled) return false;
+  const matte = bg.matteUrl ? getMatte(bg.matteUrl) : null;
+  if (!matte) return false;
+
+  // Offscreen layer the size of the frame.
+  const layer = document.createElement("canvas");
+  layer.width = width;
+  layer.height = height;
+  const lctx = layer.getContext("2d");
+  if (!lctx) return false;
+
+  // Subject, cover-fitted.
+  const scale = Math.max(width / sourceSize.w, height / sourceSize.h);
+  const dw = sourceSize.w * scale;
+  const dh = sourceSize.h * scale;
+  lctx.drawImage(source, -dw / 2, -dh / 2, dw, dh);
+
+  // Mask it with the matte (scaled to the same frame).
+  lctx.globalCompositeOperation = "destination-in";
+  lctx.drawImage(matte, -dw / 2, -dh / 2, dw, dh);
+  lctx.globalCompositeOperation = "source-over";
+
+  // Background behind the subject.
+  ctx.save();
+  if (bg.kind === "color") {
+    ctx.fillStyle = bg.color;
+    ctx.fillRect(-width / 2, -height / 2, width, height);
+  } else if (bg.kind === "image" && bg.imageUrl) {
+    const img = getImage(bg.imageUrl);
+    if (img.complete) drawCover(ctx, img, width, height, img.naturalWidth, img.naturalHeight);
+    else {
+      ctx.fillStyle = "#111827";
+      ctx.fillRect(-width / 2, -height / 2, width, height);
+    }
+  } else if (bg.kind === "blur") {
+    // Blurred copy of the same source.
+    ctx.save();
+    ctx.filter = "blur(18px) brightness(0.85)";
+    drawCover(ctx, source, width, height, sourceSize.w, sourceSize.h);
+    ctx.restore();
+  }
+  // "transparent": nothing painted, the project background shows through.
+  ctx.drawImage(layer, -width / 2, -height / 2, width, height);
+  ctx.restore();
+  return true;
+}
 const readyVideos = new Set<string>();
 
 function getVideo(url: string): HTMLVideoElement {
@@ -258,14 +346,34 @@ export function useCanvasRenderer(canvasRef: React.RefObject<HTMLCanvasElement |
           ctx.filter = cssFilter(clip.color, clip.filter);
           if (asset.kind === "image") {
             const img = getImage(asset.url);
-            if (img.complete) drawCover(ctx, img, width, height, asset.width, asset.height);
+            if (img.complete) {
+              const composited = drawWithBackground(
+                ctx,
+                img,
+                { w: img.naturalWidth || asset.width, h: img.naturalHeight || asset.height },
+                clip,
+                width,
+                height,
+              );
+              if (!composited) drawCover(ctx, img, width, height, asset.width, asset.height);
+            }
           } else {
             const v = getVideo(asset.url);
             const sourceTime = clip.freezeAt ?? clip.inPoint + local * clip.speed;
             if (readyVideos.has(asset.url) && Math.abs(v.currentTime - sourceTime) > 0.04) {
               v.currentTime = Math.max(0, Math.min(sourceTime, (v.duration || sourceTime) - 0.01));
             }
-            if (v.readyState >= 2) drawCover(ctx, v, width, height, v.videoWidth, v.videoHeight);
+            if (v.readyState >= 2) {
+              const composited = drawWithBackground(
+                ctx,
+                v,
+                { w: v.videoWidth, h: v.videoHeight },
+                clip,
+                width,
+                height,
+              );
+              if (!composited) drawCover(ctx, v, width, height, v.videoWidth, v.videoHeight);
+            }
           }
           ctx.filter = "none";
 
@@ -325,6 +433,63 @@ function drawCover(
   const dw = sw * scale;
   const dh = sh * scale;
   ctx.drawImage(source, -dw / 2, -dh / 2, dw, dh);
+}
+
+/** Public wrapper used by the exporter (same compositing as the preview). */
+export function drawClipBackground(
+  ctx: CanvasRenderingContext2D,
+  source: HTMLVideoElement | HTMLImageElement,
+  clip: Project["clips"][number],
+  width: number,
+  height: number,
+): boolean {
+  const size =
+    source instanceof HTMLVideoElement
+      ? { w: source.videoWidth, h: source.videoHeight }
+      : { w: source.naturalWidth, h: source.naturalHeight };
+  return drawWithBackground(ctx, source, size, clip, width, height);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Non-destructive audio processing                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Route a media element through the voice-enhancement chain for preview.
+ * The element is only ever routed once; changing the preset updates the nodes.
+ * Returns the chain so callers can tweak it later.
+ */
+const elementChains = new WeakMap<HTMLMediaElement, { ctx: AudioContext; input: AudioNode; output: AudioNode; preset: string }>();
+
+export function applyVoiceChain(el: HTMLMediaElement, clip: Project["clips"][number]) {
+  const voice = clip.voice;
+  if (!voice || voice.preset === "none" || voice.intensity <= 0) {
+    const existing = elementChains.get(el);
+    if (existing) {
+      // Disconnect the chain so the element plays dry again.
+      try {
+        existing.input.disconnect();
+        existing.output.disconnect();
+      } catch {
+        /* already disconnected */
+      }
+      elementChains.delete(el);
+    }
+    return;
+  }
+  const existing = elementChains.get(el);
+  if (existing && existing.preset === voice.preset) return;
+  const Ctx = window.AudioContext;
+  const ctx = existing?.ctx ?? new Ctx();
+  try {
+    const source = ctx.createMediaElementSource(el);
+    const chain = buildVoiceChain(ctx, presetById(voice.preset), voice.intensity);
+    source.connect(chain.input);
+    chain.output.connect(ctx.destination);
+    elementChains.set(el, { ctx, input: chain.input, output: chain.output, preset: voice.preset });
+  } catch {
+    /* element already has a source node from the export graph */
+  }
 }
 
 /* -------------------------------------------------------------------------- */

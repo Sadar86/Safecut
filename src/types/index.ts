@@ -27,6 +27,10 @@ export interface MediaAsset {
   createdAt: number;
   /** Audio-only extracted from a video asset. */
   hasAudio?: boolean;
+  /** TTS script + voice used to generate this asset (for regeneration). */
+  tts?: { text: string; voice: string; rate: number; pitch: number; lang: string };
+  /** Set when the asset was produced by an AI feature. */
+  source?: "import" | "extract" | "tts";
 }
 
 export type TrackKind = "video" | "audio" | "text" | "overlay";
@@ -180,6 +184,30 @@ export interface Clip {
   /** Freeze-frame clips reuse a single source frame. */
   freezeAt?: number;
   locked?: boolean;
+  /** Background removal result, composited by the renderer. */
+  background?: BackgroundSettings;
+  /** Non-destructive voice enhancement. */
+  voice?: VoiceEnhance;
+}
+
+export interface BackgroundSettings {
+  enabled: boolean;
+  kind: "transparent" | "color" | "image" | "blur";
+  color: string;
+  /** Object URL of the background image (runtime only). */
+  imageUrl?: string;
+  /** Object URL of the alpha matte (runtime only; stored as a blob). */
+  matteUrl?: string;
+  matteBlobId?: string;
+  /** Seconds into the source where the matte was captured. */
+  matteTime: number;
+  /** 0..1 edge feather applied when compositing. */
+  feather: number;
+}
+
+export interface VoiceEnhance {
+  preset: string;
+  intensity: number;
 }
 
 export interface ProjectSettings {

@@ -9,6 +9,7 @@
 import type { Clip, Project } from "@/types";
 import { computePeaks, encodeWav } from "@/lib/audio-math";
 import { getBlob } from "@/lib/storage";
+import { buildVoiceChain, presetById } from "@/lib/ai/voice";
 
 export interface WaveformData {
   /** Peak values 0..1, `buckets` long. */
@@ -62,6 +63,60 @@ export function peekWaveform(assetId: string): WaveformData | undefined {
   return waveformCache.get(assetId);
 }
 
+/**
+ * Render a clip's audio (including voice enhancement) to a WAV blob.
+ * Used by "apply enhancement" so the result is a real, playable file.
+ */
+export async function renderClipAudio(
+  clip: Clip,
+  options: { sampleRate?: number; intensity?: number } = {},
+): Promise<Blob | null> {
+  if (!clip.mediaId) return null;
+  const buffer = await decodeAsset(clip.mediaId);
+  if (!buffer) return null;
+  const sampleRate = options.sampleRate ?? buffer.sampleRate;
+  const start = Math.max(0, clip.inPoint);
+  const length = Math.max(1, Math.ceil(clip.duration * clip.speed * sampleRate));
+  const source = new AudioBuffer({
+    length: Math.min(length, Math.max(1, buffer.length - Math.floor(start * buffer.sampleRate))),
+    numberOfChannels: buffer.numberOfChannels,
+    sampleRate: buffer.sampleRate,
+  });
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    source.copyToChannel(
+      buffer.getChannelData(c).subarray(
+        Math.floor(start * buffer.sampleRate),
+        Math.floor(start * buffer.sampleRate) + source.length,
+      ),
+      c,
+    );
+  }
+
+  const OfflineCtx =
+    window.OfflineAudioContext ??
+    (window as unknown as { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext;
+  if (!OfflineCtx) return null;
+  const ctx = new OfflineCtx(buffer.numberOfChannels, source.length, buffer.sampleRate);
+  const src = new AudioBufferSourceNode(ctx, { buffer: source });
+  const voice = clip.voice;
+  const chain = voice && voice.preset !== "none"
+    ? buildVoiceChain(ctx, presetById(voice.preset), voice.intensity ?? options.intensity ?? 1)
+    : null;
+  const gain = new GainNode(ctx, { gain: Math.max(0, Math.min(1, clip.audio.volume)) });
+  if (chain) {
+    src.connect(chain.input);
+    chain.output.connect(gain);
+  } else {
+    src.connect(gain);
+  }
+  gain.connect(ctx.destination);
+  src.start();
+  const rendered = await ctx.startRendering();
+  const channels = Array.from({ length: rendered.numberOfChannels }, (_, i) => rendered.getChannelData(i));
+  const wav = encodeWav(channels, sampleRate === rendered.sampleRate ? rendered.sampleRate : rendered.sampleRate);
+  return new Blob([wav], { type: "audio/wav" });
+}
+
 /** Render the audible part of the timeline to interleaved stereo WAV. */
 export async function renderTimelineAudio(
   project: Project,
@@ -89,7 +144,21 @@ export async function renderTimelineAudio(
     const track = project.tracks.find((t) => t.id === clip.trackId);
     const gain = clip.audio.volume * (track?.volume ?? 1);
     const duck = duckGainFor(project, clip);
-    mixClip({ clip, buffer, gain: gain * duck, start, sampleRate, left, right });
+    // Voice enhancement is applied offline to the clip before mixing.
+    let processed = buffer;
+    if (clip.voice && clip.voice.preset !== "none" && clip.voice.intensity > 0) {
+      const rendered = await renderClipAudio(clip);
+      if (rendered) {
+        const Ctx = window.AudioContext;
+        const ctx = new Ctx();
+        try {
+          processed = await ctx.decodeAudioData(await rendered.arrayBuffer());
+        } finally {
+          void ctx.close().catch(() => undefined);
+        }
+      }
+    }
+    mixClip({ clip, buffer: processed, gain: gain * duck, start, sampleRate, left, right });
   }
 
   return encodeWav([left, right], sampleRate);

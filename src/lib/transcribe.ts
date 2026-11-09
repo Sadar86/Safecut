@@ -14,6 +14,7 @@
  */
 
 import type { SubtitleCue } from "@/types";
+import { wordsToCues, distributeWords, type WordTiming } from "@/lib/ai/align";
 
 export interface TranscriptSegment {
   start: number;
@@ -27,6 +28,10 @@ export interface Transcriber {
   name: string;
   /** True when nothing leaves the device. */
   local: boolean;
+  /** BCP-47 language codes the engine can handle (["*"] = ask the engine). */
+  languages?: string[];
+  /** True when the engine reports per-word timings. */
+  wordLevel?: boolean;
   available: () => boolean;
   transcribe: (
     mediaUrl: string,
@@ -70,6 +75,8 @@ export const webSpeechTranscriber: Transcriber = {
   id: "web-speech",
   name: "Browser speech recognition",
   local: false,
+  languages: ["*"],
+  wordLevel: false,
   available: () => getRecognitionCtor() !== null,
   transcribe: (mediaUrl, options) =>
     new Promise<TranscriptSegment[]>((resolve, reject) => {
@@ -127,6 +134,24 @@ export const webSpeechTranscriber: Transcriber = {
 
 export function availableTranscribers(): Transcriber[] {
   return [webSpeechTranscriber].filter((t) => t.available());
+}
+
+/**
+ * Turn phrase-level segments into word timings by spreading each phrase across
+ * its words proportionally (used by engines without word timestamps).
+ */
+export function segmentsToWords(segments: TranscriptSegment[]): WordTiming[] {
+  return segments.flatMap((seg) =>
+    distributeWords(seg.text.trim(), seg.start, seg.end).map((w) => ({ ...w, confidence: seg.confidence })),
+  );
+}
+
+/** Word timings → cues, using the shared caption alignment. */
+export function wordsToCaptionCues(
+  words: WordTiming[],
+  options: { maxChars?: number; maxGap?: number; minDuration?: number; maxWords?: number } = {},
+): SubtitleCue[] {
+  return wordsToCues(words, options);
 }
 
 /** Merge consecutive segments into readable caption cues. */

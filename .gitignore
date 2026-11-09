@@ -50,3 +50,4 @@ next-env.d.ts
 # TypeScript incremental build info
 *.tsbuildinfo
 smoke-report.json
+smoke-ai-report.json

@@ -7,7 +7,16 @@ import { demoProject } from "@/lib/project";
 import { uid } from "@/lib/utils";
 import { listProjects, loadProject, saveProject, deleteProject, markDirty } from "@/lib/storage";
 
-export type Panel = "media" | "text" | "effects" | "filters" | "audio" | "captions" | "scenes" | "templates";
+export type Panel =
+  | "media"
+  | "text"
+  | "effects"
+  | "filters"
+  | "audio"
+  | "captions"
+  | "scenes"
+  | "templates"
+  | "ai";
 
 export interface HistoryEntry {
   clips: Clip[];

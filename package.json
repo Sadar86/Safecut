@@ -13,10 +13,12 @@
     "test:e2e": "playwright test",
     "setup:ffmpeg": "node scripts/setup-ffmpeg.mjs",
     "postinstall": "node scripts/setup-ffmpeg.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:ai": "node scripts/smoke-ai.mjs"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",
+    "@huggingface/transformers": "^4.3.2",
     "clsx": "^2.1.1",
     "lucide-react": "^1.70.0",
     "next": "16.4.5",

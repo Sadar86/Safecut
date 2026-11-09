@@ -3,7 +3,8 @@
 import type { Project } from "@/types";
 import { evaluateKeyframes } from "@/lib/timeline";
 import { cssFilter, tintOverlay } from "@/lib/effects";
-import { drawTextClip } from "@/components/preview-renderer";
+import { drawTextClip, drawClipBackground } from "@/components/preview-renderer";
+import { buildVoiceChain, presetById } from "@/lib/ai/voice";
 
 export interface ExportSettings {
   width: number;
@@ -126,7 +127,14 @@ export async function prepareMedia(project: Project): Promise<MediaPool> {
         const gain = new GainNode(audioCtx, {
           gain: Math.max(0, Math.min(1, clip.audio.volume * (track.volume ?? 1))),
         });
-        node.connect(gain);
+        // Non-destructive voice enhancement in the exported mix.
+        if (clip.voice && clip.voice.preset !== "none" && clip.voice.intensity > 0) {
+          const chain = buildVoiceChain(audioCtx, presetById(clip.voice.preset), clip.voice.intensity);
+          node.connect(chain.input);
+          chain.output.connect(gain);
+        } else {
+          node.connect(gain);
+        }
         gain.connect(destination);
         gains.set(clip.id, gain);
       } catch {
@@ -215,10 +223,16 @@ export function drawProjectFrame(
       ctx.filter = cssFilter(clip.color, clip.filter);
       if (asset.kind === "video") {
         const el = pool.videos.get(asset.id);
-        if (el && el.readyState >= 2) drawCover(ctx, el, width, height, el.videoWidth, el.videoHeight);
+        if (el && el.readyState >= 2) {
+          const composited = drawClipBackground(ctx, el, clip, width, height);
+          if (!composited) drawCover(ctx, el, width, height, el.videoWidth, el.videoHeight);
+        }
       } else if (asset.kind === "image") {
         const img = pool.images.get(asset.id);
-        if (img?.complete) drawCover(ctx, img, width, height, img.naturalWidth, img.naturalHeight);
+        if (img?.complete) {
+          const composited = drawClipBackground(ctx, img, clip, width, height);
+          if (!composited) drawCover(ctx, img, width, height, img.naturalWidth, img.naturalHeight);
+        }
       }
       ctx.filter = "none";
 

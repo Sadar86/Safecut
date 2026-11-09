@@ -14,6 +14,7 @@ import {
   Type,
   Captions,
   ScanSearch,
+  BrainCircuit,
 } from "lucide-react";
 import { useEditor, type Panel } from "@/stores/editor";
 import { Button, SectionTitle, toast } from "@/components/ui";
@@ -26,6 +27,18 @@ import { FILTERS } from "@/lib/effects";
 import { CaptionsPanel } from "@/components/captions-panel";
 import { AudioStudioPanel } from "@/components/audio-studio";
 import { ScenePanel } from "@/components/scene-panel";
+import {
+  AiCaptionsPanel,
+  AssistantPanel,
+  BackgroundPanel,
+  DeviceBadge,
+  HighlightsPanel,
+  ReframePanel,
+  SilencePanel,
+  TtsPanel,
+  VoicePanel,
+  useDeviceCaps,
+} from "@/components/ai-panels";
 
 const PANELS: { id: Panel; label: string; icon: React.ReactNode }[] = [
   { id: "media", label: "Media", icon: <Film size={15} /> },
@@ -36,6 +49,7 @@ const PANELS: { id: Panel; label: string; icon: React.ReactNode }[] = [
   { id: "captions", label: "Captions", icon: <Captions size={15} /> },
   { id: "scenes", label: "Scenes", icon: <ScanSearch size={15} /> },
   { id: "templates", label: "Templates", icon: <Film size={15} /> },
+  { id: "ai", label: "AI Studio", icon: <BrainCircuit size={15} /> },
 ];
 
 export function SidePanel() {
@@ -73,6 +87,7 @@ export function SidePanel() {
         {activePanel === "audio" && <AudioStudioPanel />}
         {activePanel === "captions" && <CaptionsPanel />}
         {activePanel === "scenes" && <ScenePanel />}
+        {activePanel === "ai" && <AiStudioPanel />}
         {activePanel === "templates" && <TemplatesPanel />}
       </div>
     </aside>
@@ -483,6 +498,62 @@ function TemplatesPanel() {
       <p className="px-3 pb-4 text-[11px] text-muted">
         Templates add an animated title in the right aspect ratio. Swap in your own clips and text.
       </p>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  AI Creator Studio                                                          */
+/* -------------------------------------------------------------------------- */
+
+const AI_TABS = [
+  { id: "captions", label: "Captions" },
+  { id: "silence", label: "Silence" },
+  { id: "voice", label: "Voice" },
+  { id: "background", label: "Background" },
+  { id: "reframe", label: "Reframe" },
+  { id: "highlights", label: "Highlights" },
+  { id: "tts", label: "Voice-over" },
+  { id: "assistant", label: "Assistant" },
+] as const;
+
+type AiTab = (typeof AI_TABS)[number]["id"];
+
+function AiStudioPanel() {
+  const [tab, setTab] = useState<AiTab>("captions");
+  const caps = useDeviceCaps();
+
+  return (
+    <div className="pb-2">
+      <div className="border-b border-border-subtle px-2 py-1.5">
+        <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold">
+          <BrainCircuit size={12} className="text-brand" /> AI Creator Studio
+        </p>
+        <DeviceBadge caps={caps} />
+      </div>
+      <div className="flex flex-wrap gap-1 px-2 py-1.5">
+        {AI_TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "rounded-full border px-2 py-0.5 text-[10px]",
+              tab === t.id ? "border-brand bg-brand/10 text-brand" : "border-border-subtle text-muted hover:text-content",
+            )}
+            aria-pressed={tab === t.id}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "captions" && <AiCaptionsPanel />}
+      {tab === "silence" && <SilencePanel />}
+      {tab === "voice" && <VoicePanel />}
+      {tab === "background" && <BackgroundPanel />}
+      {tab === "reframe" && <ReframePanel />}
+      {tab === "highlights" && <HighlightsPanel />}
+      {tab === "tts" && <TtsPanel />}
+      {tab === "assistant" && <AssistantPanel />}
     </div>
   );
 }
